@@ -111,12 +111,12 @@ function download(blob, filename) {
   }
 }
 
-export function downloadSvg(svg) {
+export function downloadSvg(svg, filename = "qr.svg") {
   if (typeof svg !== "string" || !svg) throw new TypeError("SVG must be a non-empty string");
-  download(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), "qr.svg");
+  download(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), filename);
 }
 
-export async function downloadPng(svg) {
+export async function downloadPng(svg, filename = "qr.png") {
   if (typeof svg !== "string" || !svg) throw new TypeError("SVG must be a non-empty string");
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   try {
@@ -134,7 +134,7 @@ export async function downloadPng(svg) {
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob(result => result ? resolve(result) : reject(new Error("Could not encode the QR PNG")), "image/png");
     });
-    download(blob, "qr.png");
+    download(blob, filename);
   } finally {
     URL.revokeObjectURL(url);
   }

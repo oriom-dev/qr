@@ -8,6 +8,7 @@ import { createQrWithAnalysis, downloadSvg, downloadPng } from './qr.js'
 import { contactPayload, phonePayload, emailPayload } from './contact-payload.js'
 import { calendarPayload } from './calendar-payload.js'
 import { normalizeHex } from './color.js'
+import { qrFilename } from './filename.js'
 
 const type = ref('url')
 const url = ref('')
@@ -219,7 +220,9 @@ watch([content, rounded, transparent, color, decodedImage, imageSize, imageX, im
 async function download(format) {
   if (!qr.value) return
   try {
-    await (format === 'svg' ? downloadSvg(qr.value) : downloadPng(qr.value))
+    const label = { url: url.value, text: text.value, wifi: ssid.value, contact: contact.value.name, phone: phone.value, email: email.value.email, calendar: calendar.value.title }[type.value]
+    const filename = qrFilename(label, format)
+    await (format === 'svg' ? downloadSvg(qr.value, filename) : downloadPng(qr.value, filename))
   } catch {
     error.value = 'ダウンロードできませんでした。画像を変更してもう一度お試しください。'
   }
