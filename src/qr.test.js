@@ -13,6 +13,19 @@ test('creates compact self-contained SVGs with a four-module quiet zone', () => 
   assert.doesNotMatch(square, /id="finder"/)
 })
 
+test('sets the module and finder color in SVG for both shapes', () => {
+  for (const rounded of [false, true]) {
+    const svg = createQr('hello', { rounded, color: '#125a9f', transparent: true })
+    assert.match(svg, /<g fill="#125a9f"/)
+    assert.doesNotMatch(svg, /fill="white"/)
+    if (rounded) assert.match(svg, /<use href="#finder"/)
+  }
+  assert.match(createQr('hello'), /<g fill="#000000"/)
+  for (const color of ['red', '#fff', '#123456" onload="x', null]) {
+    assert.throws(() => createQr('hello', { color }), /color/i)
+  }
+})
+
 test('defaults to automatic version and mask with a four-module margin', () => {
   const text = 'hello'
   const expected = QRCode.create(text, { errorCorrectionLevel: 'H' })

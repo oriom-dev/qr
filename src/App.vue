@@ -7,6 +7,7 @@ import { readability } from './qr-headroom.js'
 import { createQrWithAnalysis, downloadSvg, downloadPng } from './qr.js'
 import { contactPayload, phonePayload, emailPayload } from './contact-payload.js'
 import { calendarPayload } from './calendar-payload.js'
+import { normalizeHex } from './color.js'
 
 const type = ref('url')
 const url = ref('')
@@ -22,6 +23,25 @@ const calendar = ref({ title: '', start: '', end: '', location: '', description:
 const calendarCreatedAt = new Date()
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const rounded = ref(false)
+const color = ref('#000000')
+const colorText = ref('#000000')
+const colorTouched = ref(false)
+const colorValid = computed(() => normalizeHex(colorText.value) !== null)
+
+function applyColorText() {
+  colorTouched.value = true
+  const normalized = normalizeHex(colorText.value)
+  if (normalized) {
+    colorText.value = normalized
+    color.value = normalized.toLowerCase()
+  }
+}
+
+function updateColorPicker(event) {
+  color.value = event.target.value
+  colorText.value = color.value.toUpperCase()
+  colorTouched.value = false
+}
 const transparent = ref(false)
 const imageEnabled = ref(false)
 const imageSource = ref('favicon')
@@ -162,7 +182,7 @@ watch(image, (src, _, onCleanup) => {
   img.src = src
 }, { immediate: true })
 
-watch([content, rounded, transparent, decodedImage, imageSize, imageX, imageY, version, maskPattern, margin], async (_, __, onCleanup) => {
+watch([content, rounded, transparent, color, decodedImage, imageSize, imageX, imageY, version, maskPattern, margin], async (_, __, onCleanup) => {
   let current = true
   onCleanup(() => { current = false })
   qr.value = null
@@ -175,6 +195,7 @@ watch([content, rounded, transparent, decodedImage, imageSize, imageX, imageY, v
     const result = createQrWithAnalysis(content.value, {
       rounded: rounded.value,
       transparent: transparent.value,
+      color: color.value,
       image: decodedImage.value?.src,
       imageAspect: decodedImage.value?.aspect,
       imageSize: Number(imageSize.value),
@@ -264,6 +285,8 @@ async function download(format) {
               <label :class="{ selected: !rounded }"><input v-model="rounded" type="radio" name="shape" :value="false"><span><span aria-hidden="true">▦</span> スクエア</span></label>
               <label :class="{ selected: rounded }"><input v-model="rounded" type="radio" name="shape" :value="true"><span><span aria-hidden="true">⠿</span> まる</span></label>
             </div>
+            <div class="color-picker"><label for="qr-color">QRコードの色</label><input id="qr-color" :value="color" type="color" @input="updateColorPicker"><input v-model="colorText" type="text" aria-label="QRコードの色の16進数" :aria-invalid="colorTouched && !colorValid" aria-describedby="color-hint" pattern="#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})" required maxlength="7" spellcheck="false" @blur="applyColorText"></div>
+            <p id="color-hint" class="hint">背景との明暗差が小さい色は読み取りにくくなります。</p>
             <label class="toggle-row"><span><strong>背景を透明にする</strong></span><input v-model="transparent" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
           </fieldset>
 

@@ -11,7 +11,8 @@ export function createQr(text, options = {}) {
 
 export function createQrWithAnalysis(text, options = {}) {
   if (typeof text !== "string" || !text) throw new TypeError("QR text must be a non-empty string");
-  const { rounded = true, transparent = false, image = null, imageSize = 0.2, imageX = 0, imageY = 0, imageAspect = 1, version, maskPattern, margin = 4, autoVersionForImage = true } = options;
+  const { rounded = true, transparent = false, color = "#000000", image = null, imageSize = 0.2, imageX = 0, imageY = 0, imageAspect = 1, version, maskPattern, margin = 4, autoVersionForImage = true } = options;
+  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) throw new TypeError("QR color must be a six-digit hex color");
   if (typeof autoVersionForImage !== "boolean") throw new TypeError("autoVersionForImage must be a boolean");
   if (version !== undefined && (!Number.isInteger(version) || version < 1 || version > 40)) throw new TypeError("QR version must be an integer from 1 to 40");
   if (maskPattern !== undefined && (!Number.isInteger(maskPattern) || maskPattern < 0 || maskPattern > 7)) throw new TypeError("QR mask pattern must be an integer from 0 to 7");
@@ -91,7 +92,7 @@ export function createQrWithAnalysis(text, options = {}) {
   if (image) {
     content += `<image href="${image}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet"/>`;
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${total}" height="${total}" shape-rendering="geometricPrecision">${transparent ? "" : `<path fill="white" d="M0 0h${total}v${total}H0z"/>`}<g fill="black" transform="translate(${margin} ${margin})">${content}</g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${total}" height="${total}" shape-rendering="geometricPrecision">${transparent ? "" : `<path fill="white" d="M0 0h${total}v${total}H0z"/>`}<g fill="${color}" transform="translate(${margin} ${margin})">${content}</g></svg>`;
   const warning = image && (headroom.reserved > 0 || headroom.remaining <= 0)
     ? "Image overlaps reserved modules or exceeds estimated correction headroom; scanability is not guaranteed."
     : null;
