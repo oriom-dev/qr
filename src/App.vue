@@ -6,6 +6,7 @@ import { wifiIcons } from './wifi-icons.js'
 import { readability } from './qr-headroom.js'
 import { createQrWithAnalysis, downloadSvg, downloadPng } from './qr.js'
 import { contactPayload, phonePayload, emailPayload } from './contact-payload.js'
+import { calendarPayload } from './calendar-payload.js'
 
 const type = ref('url')
 const url = ref('')
@@ -17,6 +18,9 @@ const hidden = ref(false)
 const contact = ref({ name: '', phone: '', email: '', organization: '', website: '' })
 const phone = ref('')
 const email = ref({ email: '', subject: '', body: '' })
+const calendar = ref({ title: '', start: '', end: '', location: '', description: '' })
+const calendarCreatedAt = new Date()
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const rounded = ref(false)
 const transparent = ref(false)
 const imageEnabled = ref(false)
@@ -49,10 +53,11 @@ const payload = computed(() => {
     if (type.value === 'contact') return { value: contact.value.name.trim() ? contactPayload(contact.value) : '' }
     if (type.value === 'phone') return { value: phonePayload(phone.value) }
     if (type.value === 'email') return { value: email.value.email.trim() ? emailPayload(email.value) : '' }
+    if (type.value === 'calendar') return { value: calendar.value.title.trim() && calendar.value.start && calendar.value.end ? calendarPayload({ ...calendar.value, now: calendarCreatedAt }) : '' }
     if (!ssid.value) return { value: '' }
     return { value: `WIFI:T:${security.value};S:${escapeWifi(ssid.value)};${security.value === 'nopass' ? '' : `P:${escapeWifi(password.value)};`}H:${hidden.value ? 'true' : 'false'};;` }
   } catch {
-    return { value: '', error: '入力内容を確認してください。電話番号、メールアドレス、URLは正しい形式で入力してください。' }
+    return { value: '', error: type.value === 'calendar' ? '予定の入力内容を確認してください。終了日時は開始日時より後にしてください。' : '入力内容を確認してください。電話番号、メールアドレス、URLは正しい形式で入力してください。' }
   }
 })
 const content = computed(() => payload.value.value)
@@ -215,7 +220,7 @@ async function download(format) {
           <fieldset class="field-group">
             <legend><span class="step">1</span> 何をシェアする？</legend>
             <div class="segmented type-picker">
-              <label v-for="option in [{ value: 'url', label: '↗  URL' }, { value: 'text', label: '✎  テキスト' }, { value: 'wifi', label: '⌁  Wi-Fi' }, { value: 'contact', label: '▤  連絡先' }, { value: 'phone', label: '☎  電話' }, { value: 'email', label: '✉  メール' }]" :key="option.value" :class="{ selected: type === option.value }"><input v-model="type" type="radio" name="type" :value="option.value"><span>{{ option.label }}</span></label>
+              <label v-for="option in [{ value: 'url', label: '↗  URL' }, { value: 'text', label: '✎  テキスト' }, { value: 'wifi', label: '⌁  Wi-Fi' }, { value: 'contact', label: '▤  連絡先' }, { value: 'phone', label: '☎  電話' }, { value: 'email', label: '✉  メール' }, { value: 'calendar', label: '▦  カレンダー' }]" :key="option.value" :class="{ selected: type === option.value }"><input v-model="type" type="radio" name="type" :value="option.value"><span>{{ option.label }}</span></label>
             </div>
             <div v-if="type === 'url'" class="input-block"><label for="url">URL</label><input id="url" v-model="url" type="url" placeholder="https://example.com" autocomplete="url"><p class="hint">https:// から入力してください。</p></div>
             <div v-else-if="type === 'text'" class="input-block"><label for="text">テキスト</label><textarea id="text" v-model="text" rows="4" placeholder="ここにテキストを入力"></textarea></div>
@@ -232,6 +237,15 @@ async function download(format) {
               <div class="input-block"><label for="email-address">メールアドレス</label><input id="email-address" v-model="email.email" type="email" autocomplete="email" placeholder="name@example.com"></div>
               <div class="input-block"><label for="email-subject">件名（任意）</label><input id="email-subject" v-model="email.subject" type="text"></div>
               <div class="input-block"><label for="email-body">本文（任意）</label><textarea id="email-body" v-model="email.body" rows="4"></textarea></div>
+            </div>
+            <div v-else-if="type === 'calendar'" class="calendar-fields">
+              <div class="input-block"><label for="event-title">予定名</label><input id="event-title" v-model="calendar.title" type="text" placeholder="予定名"></div>
+              <div class="input-block"><label for="event-start">開始日時</label><input id="event-start" v-model="calendar.start" type="datetime-local"></div>
+              <div class="input-block"><label for="event-end">終了日時</label><input id="event-end" v-model="calendar.end" type="datetime-local"></div>
+              <p class="hint">日時はこの端末のタイムゾーン（{{ timezone }}）で入力してください。</p>
+              <div class="input-block"><label for="event-location">場所（任意）</label><input id="event-location" v-model="calendar.location" type="text"></div>
+              <div class="input-block"><label for="event-description">詳細（任意）</label><textarea id="event-description" v-model="calendar.description" rows="3"></textarea></div>
+              <p class="hint">予定情報はQRコードに含まれます。カレンダーへの追加は読み取りアプリの対応状況によって異なります。</p>
             </div>
             <div v-else class="wifi-fields">
               <div class="input-block"><label for="ssid">ネットワーク名（SSID）</label><input id="ssid" v-model="ssid" type="text" autocomplete="off" placeholder="ネットワーク名"></div>
