@@ -2,8 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import siteQr from './site-qr.svg'
+import { wifiIcons } from './wifi-icons.js'
 import { readability } from './qr-headroom.js'
 import { createQrWithAnalysis, downloadSvg, downloadPng } from './qr.js'
+import { contactPayload, phonePayload, emailPayload } from './contact-payload.js'
 
 const type = ref('url')
 const url = ref('')
@@ -12,10 +14,14 @@ const ssid = ref('')
 const password = ref('')
 const security = ref('WPA')
 const hidden = ref(false)
+const contact = ref({ name: '', phone: '', email: '', organization: '', website: '' })
+const phone = ref('')
+const email = ref({ email: '', subject: '', body: '' })
 const rounded = ref(false)
 const transparent = ref(false)
 const imageEnabled = ref(false)
 const imageSource = ref('favicon')
+const wifiIcon = ref(0)
 const uploadedImage = ref('')
 const favicon = ref('')
 const faviconMessage = ref('')
@@ -36,12 +42,20 @@ const decodedImage = ref(null)
 const imageError = ref('')
 
 const escapeWifi = value => value.replace(/[\\;,:\"]/g, '\\$&')
-const content = computed(() => {
-  if (type.value === 'url') return url.value.trim()
-  if (type.value === 'text') return text.value
-  if (!ssid.value) return ''
-  return `WIFI:T:${security.value};S:${escapeWifi(ssid.value)};${security.value === 'nopass' ? '' : `P:${escapeWifi(password.value)};`}H:${hidden.value ? 'true' : 'false'};;`
+const payload = computed(() => {
+  try {
+    if (type.value === 'url') return { value: url.value.trim() }
+    if (type.value === 'text') return { value: text.value }
+    if (type.value === 'contact') return { value: contact.value.name.trim() ? contactPayload(contact.value) : '' }
+    if (type.value === 'phone') return { value: phonePayload(phone.value) }
+    if (type.value === 'email') return { value: email.value.email.trim() ? emailPayload(email.value) : '' }
+    if (!ssid.value) return { value: '' }
+    return { value: `WIFI:T:${security.value};S:${escapeWifi(ssid.value)};${security.value === 'nopass' ? '' : `P:${escapeWifi(password.value)};`}H:${hidden.value ? 'true' : 'false'};;` }
+  } catch {
+    return { value: '', error: '入力内容を確認してください。電話番号、メールアドレス、URLは正しい形式で入力してください。' }
+  }
 })
+const content = computed(() => payload.value.value)
 const minimumVersion = computed(() => {
   if (!content.value) return null
   try {
@@ -64,9 +78,18 @@ const faviconUrl = computed(() => {
     return ''
   }
 })
-const image = computed(() => imageEnabled.value ? (imageSource.value === 'favicon' && type.value === 'url' ? favicon.value : imageSource.value === 'upload' ? uploadedImage.value : '') : '')
+const image = computed(() => imageEnabled.value ? (imageSource.value === 'favicon' && type.value === 'url' ? favicon.value : imageSource.value === 'wifi' && type.value === 'wifi' ? wifiIcons[wifiIcon.value].src : imageSource.value === 'upload' ? uploadedImage.value : '') : '')
 
-watch(type, value => {
+let previousImageSettings
+watch(type, (value, previous) => {
+  if (value === 'wifi') {
+    previousImageSettings = { enabled: imageEnabled.value, source: imageSource.value }
+    imageSource.value = 'wifi'
+    imageEnabled.value = true
+  } else if (previous === 'wifi') {
+    imageEnabled.value = previousImageSettings.enabled
+    imageSource.value = previousImageSettings.source
+  }
   if (value !== 'url' && imageSource.value === 'favicon') imageSource.value = 'upload'
 })
 
@@ -192,10 +215,24 @@ async function download(format) {
           <fieldset class="field-group">
             <legend><span class="step">1</span> 何をシェアする？</legend>
             <div class="segmented type-picker">
-              <label v-for="option in [{ value: 'url', label: '↗  URL' }, { value: 'text', label: '✎  テキスト' }, { value: 'wifi', label: '⌁  Wi-Fi' }]" :key="option.value" :class="{ selected: type === option.value }"><input v-model="type" type="radio" name="type" :value="option.value"><span>{{ option.label }}</span></label>
+              <label v-for="option in [{ value: 'url', label: '↗  URL' }, { value: 'text', label: '✎  テキスト' }, { value: 'wifi', label: '⌁  Wi-Fi' }, { value: 'contact', label: '▤  連絡先' }, { value: 'phone', label: '☎  電話' }, { value: 'email', label: '✉  メール' }]" :key="option.value" :class="{ selected: type === option.value }"><input v-model="type" type="radio" name="type" :value="option.value"><span>{{ option.label }}</span></label>
             </div>
             <div v-if="type === 'url'" class="input-block"><label for="url">URL</label><input id="url" v-model="url" type="url" placeholder="https://example.com" autocomplete="url"><p class="hint">https:// から入力してください。</p></div>
             <div v-else-if="type === 'text'" class="input-block"><label for="text">テキスト</label><textarea id="text" v-model="text" rows="4" placeholder="ここにテキストを入力"></textarea></div>
+            <div v-else-if="type === 'contact'" class="contact-fields">
+              <div class="input-block"><label for="contact-name">名前</label><input id="contact-name" v-model="contact.name" type="text" autocomplete="name" placeholder="名前"></div>
+              <div class="input-block"><label for="contact-phone">電話番号</label><input id="contact-phone" v-model="contact.phone" type="tel" autocomplete="tel" placeholder="+81 90 1234 5678"></div>
+              <div class="input-block"><label for="contact-email">メールアドレス</label><input id="contact-email" v-model="contact.email" type="email" autocomplete="email" placeholder="name@example.com"></div>
+              <div class="input-block"><label for="contact-organization">組織</label><input id="contact-organization" v-model="contact.organization" type="text" autocomplete="organization"></div>
+              <div class="input-block"><label for="contact-website">ウェブサイト</label><input id="contact-website" v-model="contact.website" type="url" placeholder="https://example.com"></div>
+              <p class="hint">入力した連絡先は、QRコードを読み取る人に共有されます。</p>
+            </div>
+            <div v-else-if="type === 'phone'" class="input-block"><label for="phone">電話番号</label><input id="phone" v-model="phone" type="tel" autocomplete="tel" placeholder="+81 90 1234 5678"></div>
+            <div v-else-if="type === 'email'" class="email-fields">
+              <div class="input-block"><label for="email-address">メールアドレス</label><input id="email-address" v-model="email.email" type="email" autocomplete="email" placeholder="name@example.com"></div>
+              <div class="input-block"><label for="email-subject">件名（任意）</label><input id="email-subject" v-model="email.subject" type="text"></div>
+              <div class="input-block"><label for="email-body">本文（任意）</label><textarea id="email-body" v-model="email.body" rows="4"></textarea></div>
+            </div>
             <div v-else class="wifi-fields">
               <div class="input-block"><label for="ssid">ネットワーク名（SSID）</label><input id="ssid" v-model="ssid" type="text" autocomplete="off" placeholder="ネットワーク名"></div>
               <div class="input-block"><label for="security">セキュリティ</label><select id="security" v-model="security"><option value="WPA">WPA / WPA2 / WPA3</option><option value="WEP">WEP</option><option value="nopass">なし</option></select></div>
@@ -203,6 +240,7 @@ async function download(format) {
               <label class="check-label"><input v-model="hidden" type="checkbox"> 非公開ネットワーク</label>
               <p class="hint">Wi-FiのパスワードはQRコードを読み取る人に共有されます。</p>
             </div>
+            <p v-if="payload.error" class="error" role="alert">{{ payload.error }}</p>
           </fieldset>
 
           <fieldset class="field-group">
@@ -219,8 +257,9 @@ async function download(format) {
             <legend><span class="step">3</span> 画像をプラス</legend>
             <label class="toggle-row"><span><strong>中央に画像を入れる</strong></span><input v-model="imageEnabled" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
             <div v-if="imageEnabled" class="image-options">
-              <div v-if="type === 'url'" class="segmented"><label :class="{ selected: imageSource === 'favicon' }"><input v-model="imageSource" type="radio" name="image-source" value="favicon"><span>サイトのアイコン</span></label><label :class="{ selected: imageSource === 'upload' }"><input v-model="imageSource" type="radio" name="image-source" value="upload"><span>画像をアップロード</span></label></div>
+              <div v-if="type === 'url' || type === 'wifi'" class="segmented"><label :class="{ selected: imageSource === (type === 'url' ? 'favicon' : 'wifi') }"><input v-model="imageSource" type="radio" name="image-source" :value="type === 'url' ? 'favicon' : 'wifi'"><span>{{ type === 'url' ? 'サイトのアイコン' : 'Wi-Fiアイコン' }}</span></label><label :class="{ selected: imageSource === 'upload' }"><input v-model="imageSource" type="radio" name="image-source" value="upload"><span>画像をアップロード</span></label></div>
               <template v-if="imageSource === 'favicon' && type === 'url'"><p class="privacy-note">アイコン取得のため、URLのホスト名を weserv.nl と DuckDuckGo に送信します。取得できない場合は画像をアップロードしてください。</p><p v-if="faviconMessage" class="hint" role="status">{{ faviconMessage }}</p><p v-else-if="!faviconUrl" class="hint">http:// または https:// で始まるURLを入力してください。</p></template>
+              <fieldset v-else-if="imageSource === 'wifi' && type === 'wifi'" class="wifi-icons"><legend>アイコンを選ぶ</legend><div class="segmented"><label v-for="(icon, index) in wifiIcons" :key="icon.name" :class="{ selected: wifiIcon === index }"><input v-model="wifiIcon" type="radio" name="wifi-icon" :value="index"><img :src="icon.src" :alt="icon.name"></label></div></fieldset>
               <div v-else class="input-block"><label for="image-file">画像ファイル</label><input id="image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" @change="onUpload"><p class="hint">PNG、JPEG、WebP、GIF、SVG に対応</p><p v-if="fileError" class="error" role="alert">{{ fileError }}</p></div>
               <p v-if="imageError" class="error" role="alert">{{ imageError }}</p>
               <div class="slider-list">

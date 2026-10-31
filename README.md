@@ -1,6 +1,6 @@
 # QR GENERATOR
 
-URL、テキスト、Wi-Fi の QR コードをブラウザ内で生成する静的アプリです。
+URL、テキスト、Wi-Fi、連絡先、電話、メールの QR コードをブラウザ内で生成する静的アプリです。連絡先は vCard 形式です。
 
 ```sh
 npm install
