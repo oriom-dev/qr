@@ -114,13 +114,71 @@ test('cuts out the actual rectangular image bounds', () => {
   assert.throws(() => createQr(text, { image, imageAspect: 0 }))
 })
 
-test('allows image sizes up to 30 percent', () => {
-  const text = 'https://example.com'
-  const count = QRCode.create(text, { errorCorrectionLevel: 'H' }).modules.size
+test('allows image sizes up to 50 percent and clamps larger values', () => {
   const image = 'data:image/png;base64,aGVsbG8='
-  const width = `width="${count * 0.3}"`
-  assert.ok(createQr(text, { image, imageSize: 0.3 }).includes(width))
-  assert.ok(createQr(text, { image, imageSize: 0.4 }).includes(width))
+  for (const size of [0.3, 0.4, 0.5, 0.9]) {
+    const result = createQrWithAnalysis('hello', { image, imageSize: size })
+    const count = 17 + 4 * result.version
+    assert.ok(result.svg.includes(`width="${count * Math.min(size, 0.5)}"`))
+  }
+})
+
+test('selects the first suitable version without covering reserved modules', () => {
+  const image = 'data:image/png;base64,aGVsbG8='
+  for (const options of [
+    { imageSize: 0.3 },
+    { imageSize: 0.5, imageAspect: 2, version: 2, maskPattern: 7 },
+    { imageSize: 0.2, imageX: 2, imageY: -1 },
+  ]) {
+    const result = createQrWithAnalysis('hello', { image, ...options })
+    const start = options.version ?? result.minimumVersion
+    assert.ok(result.version >= start && result.version <= Math.min(40, start + 7))
+    assert.equal(result.warning, null)
+    assert.equal(result.headroom.reserved, 0)
+    assert.ok(result.headroom.remaining > 0)
+    if (options.maskPattern !== undefined) assert.equal(result.maskPattern, options.maskPattern)
+    for (let version = start; version < result.version; version++) {
+      const earlier = createQrWithAnalysis('hello', { image, ...options, version, autoVersionForImage: false })
+      assert.ok(earlier.headroom.reserved > 0 || earlier.headroom.remaining <= 0)
+    }
+  }
+})
+
+test('opt-out preserves an explicit version and warns when its image is unsafe', () => {
+  const image = 'data:image/png;base64,aGVsbG8='
+  const result = createQrWithAnalysis('hello', { image, imageSize: 0.5, version: 1, autoVersionForImage: false })
+  assert.equal(result.version, 1)
+  assert.ok(result.headroom.reserved > 0 || result.headroom.remaining <= 0)
+  assert.match(result.warning, /scanability is not guaranteed/i)
+  assert.throws(() => createQr('hello', { autoVersionForImage: 'false' }), /autoVersionForImage/)
+})
+
+test('bounds the search and returns the best candidate with a warning', () => {
+  const image = 'data:image/png;base64,aGVsbG8='
+  const options = { image, imageSize: 0.5 }
+  const original = QRCode.create
+  const probes = []
+  QRCode.create = function (text, opts) {
+    if (opts.maskPattern === 0) probes.push(opts.version)
+    return original.call(this, text, opts)
+  }
+  let result
+  try {
+    result = createQrWithAnalysis('hello', options)
+  } finally {
+    QRCode.create = original
+  }
+  assert.deepEqual(probes, [1, 2, 3, 4, 5, 6, 7, 8])
+  assert.match(result.warning, /scanability is not guaranteed/i)
+  const candidates = probes.map(version => createQrWithAnalysis('hello', { ...options, version, autoVersionForImage: false }))
+  for (const candidate of candidates) {
+    assert.ok(candidate.headroom.reserved > 0 || candidate.headroom.remaining <= 0)
+    assert.ok(result.headroom.reserved < candidate.headroom.reserved ||
+      (result.headroom.reserved === candidate.headroom.reserved && result.headroom.remaining >= candidate.headroom.remaining))
+  }
+  const last = createQrWithAnalysis('hello', { ...options, version: 40 })
+  assert.equal(last.version, 40)
+  assert.ok(last.warning)
 })
 
 test('embeds only supported image data', () => {

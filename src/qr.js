@@ -11,7 +11,8 @@ export function createQr(text, options = {}) {
 
 export function createQrWithAnalysis(text, options = {}) {
   if (typeof text !== "string" || !text) throw new TypeError("QR text must be a non-empty string");
-  const { rounded = true, transparent = false, image = null, imageSize = 0.2, imageX = 0, imageY = 0, imageAspect = 1, version, maskPattern, margin = 4 } = options;
+  const { rounded = true, transparent = false, image = null, imageSize = 0.2, imageX = 0, imageY = 0, imageAspect = 1, version, maskPattern, margin = 4, autoVersionForImage = true } = options;
+  if (typeof autoVersionForImage !== "boolean") throw new TypeError("autoVersionForImage must be a boolean");
   if (version !== undefined && (!Number.isInteger(version) || version < 1 || version > 40)) throw new TypeError("QR version must be an integer from 1 to 40");
   if (maskPattern !== undefined && (!Number.isInteger(maskPattern) || maskPattern < 0 || maskPattern > 7)) throw new TypeError("QR mask pattern must be an integer from 0 to 7");
   if (margin !== 0 && margin !== 4) throw new TypeError("QR margin must be 0 or 4");
@@ -23,18 +24,46 @@ export function createQrWithAnalysis(text, options = {}) {
   }
 
   const minimumQr = QRCode.create(text, { errorCorrectionLevel: "H" });
-  const qr = version === undefined && maskPattern === undefined
+  // Preserve the encoder's error for an explicitly selected version that cannot hold the data.
+  if (version !== undefined && version < minimumQr.version) {
+    QRCode.create(text, { errorCorrectionLevel: "H", version, maskPattern });
+  }
+  const bounds = count => {
+    const size = image ? Math.min(imageSize, 0.5) * count : 0;
+    const width = size * Math.min(1, imageAspect);
+    const height = size * Math.min(1, 1 / imageAspect);
+    const x = clamp((count - width) / 2 + imageX, 8, count - 8 - width);
+    const y = clamp((count - height) / 2 + imageY, 8, count - 8 - height);
+    return { x, y, width, height, covered: (r, c) => !!image && c < x + width && c + 1 > x && r < y + height && r + 1 > y };
+  };
+  let selectedVersion = version ?? minimumQr.version;
+  let headroom;
+  if (image && autoVersionForImage) {
+    let best;
+    // ponytail: search at most eight versions to bound synchronous UI work; widen or move to a worker if needed.
+    const end = Math.min(40, selectedVersion + 7);
+    for (let candidate = selectedVersion; candidate <= end; candidate++) {
+      const probe = QRCode.create(text, { errorCorrectionLevel: "H", version: candidate, maskPattern: 0 });
+      const estimate = estimateHeadroom(probe, bounds(probe.modules.size).covered);
+      if (!best || estimate.reserved < best.headroom.reserved ||
+          (estimate.reserved === best.headroom.reserved && estimate.remaining > best.headroom.remaining)) {
+        best = { version: candidate, headroom: estimate };
+      }
+      if (estimate.reserved === 0 && estimate.remaining > 0) {
+        best = { version: candidate, headroom: estimate };
+        break;
+      }
+    }
+    selectedVersion = best.version;
+    headroom = best.headroom;
+  }
+  const qr = selectedVersion === minimumQr.version && maskPattern === undefined
     ? minimumQr
-    : QRCode.create(text, { errorCorrectionLevel: "H", version, maskPattern });
+    : QRCode.create(text, { errorCorrectionLevel: "H", version: selectedVersion, maskPattern });
   const modules = qr.modules;
   const count = modules.size;
-  // ponytail: cap the logo at 30% and keep it away from finder patterns; scan-test critical uses.
-  const size = image ? Math.min(imageSize, 0.3) * count : 0;
-  const width = size * Math.min(1, imageAspect);
-  const height = size * Math.min(1, 1 / imageAspect);
-  const x = clamp((count - width) / 2 + imageX, 8, count - 8 - width);
-  const y = clamp((count - height) / 2 + imageY, 8, count - 8 - height);
-  const covered = (r, c) => image && c < x + width && c + 1 > x && r < y + height && r + 1 > y;
+  const { x, y, width, height, covered } = bounds(count);
+  headroom ??= estimateHeadroom(qr, covered);
   const black = (r, c) => r >= 0 && c >= 0 && r < count && c < count && !covered(r, c) && modules.get(r, c) === 1;
   const finder = (r, c) => (r < 7 && (c < 7 || c >= count - 7)) || (r >= count - 7 && c < 7);
   let path = "";
@@ -63,7 +92,10 @@ export function createQrWithAnalysis(text, options = {}) {
     content += `<image href="${image}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet"/>`;
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${total}" height="${total}" shape-rendering="geometricPrecision">${transparent ? "" : `<path fill="white" d="M0 0h${total}v${total}H0z"/>`}<g fill="black" transform="translate(${margin} ${margin})">${content}</g></svg>`;
-  return { svg, headroom: estimateHeadroom(qr, covered), version: qr.version, maskPattern: qr.maskPattern, minimumVersion: minimumQr.version };
+  const warning = image && (headroom.reserved > 0 || headroom.remaining <= 0)
+    ? "Image overlaps reserved modules or exceeds estimated correction headroom; scanability is not guaranteed."
+    : null;
+  return { svg, headroom, version: qr.version, maskPattern: qr.maskPattern, minimumVersion: minimumQr.version, warning };
 }
 
 function download(blob, filename) {

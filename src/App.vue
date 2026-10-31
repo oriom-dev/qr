@@ -28,6 +28,8 @@ const margin = ref(4)
 const readabilityLabels = ['読めない', 'ぎりぎり', '環境によっては大変', '簡単']
 const qr = ref(null)
 const headroom = ref(null)
+const actualVersion = ref(null)
+const sizeWarning = ref(false)
 const error = ref('')
 const fileError = ref('')
 const decodedImage = ref(null)
@@ -137,6 +139,8 @@ watch([content, rounded, transparent, decodedImage, imageSize, imageX, imageY, v
   onCleanup(() => { current = false })
   qr.value = null
   headroom.value = null
+  actualVersion.value = null
+  sizeWarning.value = false
   error.value = ''
   if (!content.value) return
   try {
@@ -155,6 +159,8 @@ watch([content, rounded, transparent, decodedImage, imageSize, imageX, imageY, v
     if (current) {
       qr.value = result.svg
       headroom.value = result.headroom
+      actualVersion.value = result.version
+      sizeWarning.value = !!result.warning
     }
   } catch {
     if (current) error.value = 'QRコードを作成できませんでした。入力内容や文字数を確認してください。'
@@ -218,16 +224,18 @@ async function download(format) {
               <div v-else class="input-block"><label for="image-file">画像ファイル</label><input id="image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" @change="onUpload"><p class="hint">PNG、JPEG、WebP、GIF、SVG に対応</p><p v-if="fileError" class="error" role="alert">{{ fileError }}</p></div>
               <p v-if="imageError" class="error" role="alert">{{ imageError }}</p>
               <div class="slider-list">
-                <label for="image-size"><span>画像のサイズ <output>{{ Math.round(imageSize * 100) }}%</output></span><input id="image-size" v-model.number="imageSize" type="range" min="0.05" max="0.3" step="0.01"></label>
+                <label for="image-size"><span>画像のサイズ <output>{{ Math.round(imageSize * 100) }}%</output></span><input id="image-size" v-model.number="imageSize" type="range" min="0.05" max="0.5" step="0.01"></label>
                 <label for="image-x"><span>左右の位置 <output>{{ imageX }} モジュール</output></span><input id="image-x" v-model.number="imageX" type="range" min="-10" max="10" step="1"></label>
                 <label for="image-y"><span>上下の位置 <output>{{ imageY }} モジュール</output></span><input id="image-y" v-model.number="imageY" type="range" min="-10" max="10" step="1"></label>
               </div>
-              <p class="hint">画像の大きさや位置によっては読み取れない場合があります。</p>
+              <p class="hint">画像に合わせてQRコードのサイズを自動調整します。読み取りは保証されないため、実機で確認してください。</p>
+              <p v-if="actualVersion && actualVersion > (version || minimumVersion)" class="hint">QRコードをサイズ {{ actualVersion }} に調整しました。</p>
             </div>
           </fieldset>
           <details class="advanced field-group">
             <summary>詳細設定</summary>
             <div class="input-block"><label for="version">QRコードのサイズ</label><select id="version" v-model="version" :disabled="!minimumVersion"><option value="">自動</option><option v-for="n in 40" :key="n" :value="n" :disabled="n < minimumVersion">{{ n }}（{{ 17 + n * 4 }} × {{ 17 + n * 4 }}）</option></select></div>
+            <p v-if="actualVersion" class="hint">使用中のサイズ：{{ actualVersion }}（{{ 17 + actualVersion * 4 }} × {{ 17 + actualVersion * 4 }}）<template v-if="version !== '' && actualVersion !== version">（画像に合わせて自動調整）</template></p>
             <div class="input-block"><label for="mask">マスク</label><select id="mask" v-model="maskPattern"><option value="">自動</option><option v-for="n in 8" :key="n" :value="n - 1">{{ n - 1 }}</option></select></div>
             <label class="check-label"><input v-model="margin" type="checkbox" :true-value="0" :false-value="4"> 余白をなくす</label>
             <p v-if="margin === 0" class="hint">配置先で周囲に4マス分の明るい余白が必要です。</p>
@@ -247,6 +255,7 @@ async function download(format) {
             <div class="readability-track" role="meter" aria-label="読み取りやすさの目安" aria-valuemin="0" aria-valuemax="3" :aria-valuenow="readabilityLevel" :aria-valuetext="readabilityLabels[readabilityLevel]"><span class="readability-marker" :style="{ left: `${readabilityLevel * 100 / 3}%` }"></span></div>
             <div class="readability-labels" aria-hidden="true"><span v-for="label in readabilityLabels" :key="label">{{ label }}</span></div>
             <p class="hint">画像の影響を大きめに見積もった目安です。実際の読み取りを保証するものではありません。</p>
+            <p v-if="sizeWarning" class="error">画像に適したサイズを見つけられませんでした。画像を小さくするか位置を変更し、実機で読み取りを確認してください。</p>
             <p v-if="headroom.reserved" class="error">画像が読み取りに必要な特殊パターンと重なっています。読み取れない可能性があります。</p>
           </section>
           
@@ -254,6 +263,6 @@ async function download(format) {
         </aside>
       </div>
     </main>
-    <footer><span>QR GENERATOR<span class="brand-dot">.</span></span><a href="https://github.com/oriom-dev" target="_blank" rel="noopener noreferrer">By oriom</a></footer>
+    <footer><span>QR GENERATOR<span class="brand-dot">.</span></span><div class="footer-links"><a href="https://github.com/oriom-dev" target="_blank" rel="noopener noreferrer">By oriom</a><a class="github-link" href="https://github.com/oriom-dev/qr" target="_blank" rel="noopener noreferrer" aria-label="GitHub リポジトリ（新しいタブで開く）"><svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 .7a11.3 11.3 0 0 0-3.57 22.02c.56.1.77-.24.77-.54v-2.1c-3.14.68-3.8-1.33-3.8-1.33-.52-1.32-1.26-1.67-1.26-1.67-1.03-.7.08-.69.08-.69 1.13.08 1.73 1.16 1.73 1.16 1.01 1.73 2.64 1.23 3.28.94.1-.73.4-1.23.72-1.51-2.51-.29-5.15-1.26-5.15-5.59 0-1.23.44-2.24 1.16-3.03-.12-.28-.5-1.43.11-2.99 0 0 .95-.3 3.11 1.16a10.8 10.8 0 0 1 5.66 0c2.16-1.46 3.11-1.16 3.11-1.16.61 1.56.23 2.71.11 2.99.72.79 1.16 1.8 1.16 3.03 0 4.34-2.64 5.3-5.16 5.58.41.36.77 1.05.77 2.12v3.09c0 .3.2.65.78.54A11.3 11.3 0 0 0 12 .7Z"/></svg></a></div></footer>
   </div>
 </template>
